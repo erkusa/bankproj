@@ -1,13 +1,12 @@
 CREATE TABLE users (
-                       id SERIAL PRIMARY KEY,
-                       username VARCHAR(50) UNIQUE NOT NULL,
-                       email VARCHAR(100) UNIQUE NOT NULL,
-                       password_hash TEXT NOT NULL,
-                       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    user_id VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    password VARCHAR(100) NOT NULL
 );
 
-INSERT INTO users (username, email, password_hash)
-VALUES
-    ('test_user1', 'test1@example.com', 'hashed_password_1'),
-    ('test_user2', 'test2@example.com', 'hashed_password_2'),
-    ('test_user3', 'test3@example.com', 'hashed_password_3');
+CREATE TABLE accounts (
+    account_number VARCHAR(50) PRIMARY KEY,
+    user_id VARCHAR(50) REFERENCES users(user_id) ON DELETE CASCADE,
+    balance DECIMAL(15,2) DEFAULT 0.0 NOT NULL,
+    currency VARCHAR(10) NOT NULL
+);
