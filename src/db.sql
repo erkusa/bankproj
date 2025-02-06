@@ -10,3 +10,6 @@ CREATE TABLE accounts (
     balance DECIMAL(15,2) DEFAULT 0.0 NOT NULL,
     currency VARCHAR(10) NOT NULL
 );
+
+CREATE INDEX idx_user_id ON accounts(user_id);
+CREATE INDEX idx_account_number ON accounts(account_number);

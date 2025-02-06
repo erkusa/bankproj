@@ -1,6 +1,13 @@
 import java.util.*;
 
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
+
 class User {
     private String userId;
     private String name;
@@ -28,9 +35,22 @@ class User {
 
     public void addAccount(Account account) {
         accounts.add(account);
+        DatabaseConnection.executeUpdate("INSERT INTO accounts (account_number, user_id, currency) VALUES (?, ?, ?)",
+                account.getAccountNumber(), userId, account.getCurrency());
     }
 
     public List<Account> getAccounts() {
+        List<Account> accounts = new ArrayList<>();
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement("SELECT * FROM accounts WHERE user_id = ?")) {
+            statement.setString(1, userId);
+            ResultSet rs = statement.executeQuery();
+            while (rs.next()) {
+                accounts.add(new Account(rs.getString("account_number"), rs.getString("currency"), rs.getDouble("balance")));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
         return accounts;
     }
 }
@@ -44,6 +64,12 @@ class Account {
         this.accountNumber = accountNumber;
         this.currency = currency;
         this.balance = 0.0;
+    }
+
+    public Account(String accountNumber, String currency, double balance) {
+        this.accountNumber = accountNumber;
+        this.currency = currency;
+        this.balance = balance;
     }
 
     public String getAccountNumber() {
@@ -61,6 +87,7 @@ class Account {
     public void deposit(double amount) {
         if (amount > 0) {
             balance += amount;
+            DatabaseConnection.executeUpdate("UPDATE accounts SET balance = ? WHERE account_number = ?", balance, accountNumber);
             System.out.println("Deposit successful. New balance: " + balance + " " + currency);
         } else {
             System.out.println("Invalid deposit amount.");
@@ -70,6 +97,7 @@ class Account {
     public void withdraw(double amount) throws InsufficientFundsException {
         if (amount > 0 && amount <= balance) {
             balance -= amount;
+            DatabaseConnection.executeUpdate("UPDATE accounts SET balance = ? WHERE account_number = ?", balance, accountNumber);
             System.out.println("Withdrawal successful. New balance: " + balance + " " + currency);
         } else {
             throw new InsufficientFundsException("Insufficient funds or invalid amount.");
@@ -84,7 +112,6 @@ class InsufficientFundsException extends Exception {
     }
 }
 
-
 class BankService {
     private Map<String, User> users;
     private Scanner scanner;
@@ -92,6 +119,22 @@ class BankService {
     public BankService() {
         users = new HashMap<>();
         scanner = new Scanner(System.in);
+        loadUsersFromDatabase();
+    }
+
+    private void loadUsersFromDatabase() {
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement("SELECT * FROM users");
+             ResultSet rs = statement.executeQuery()) {
+            while (rs.next()) {
+                String userId = rs.getString("user_id");
+                String name = rs.getString("name");
+                String password = rs.getString("password");
+                users.put(userId, new User(userId, name, password));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
     }
 
     public void createUser() {
@@ -106,6 +149,8 @@ class BankService {
             System.out.println("User with this ID already exists.");
         } else {
             users.put(userId, new User(userId, name, password));
+            DatabaseConnection.executeUpdate("INSERT INTO users (user_id, name, password) VALUES (?, ?, ?)",
+                    userId, name, password);
             System.out.println("User created successfully.");
         }
     }
@@ -131,65 +176,66 @@ class BankService {
     }
 
     public void deposit() {
-        System.out.print("Enter user ID: ");
-        String userId = scanner.next();
-        User user = users.get(userId);
-
-        if (user == null) {
-            System.out.println("User not found.");
-            return;
-        }
-
         System.out.print("Enter account number: ");
         String accountNumber = scanner.next();
-        Account account = findAccount(user, accountNumber);
-
-        if (account == null) {
-            System.out.println("Account not found.");
-            return;
-        }
 
         System.out.print("Enter deposit amount: ");
         double amount = scanner.nextDouble();
-        account.deposit(amount);
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement("SELECT balance FROM accounts WHERE account_number = ?")) {
+            statement.setString(1, accountNumber);
+            ResultSet rs = statement.executeQuery();
+            if (rs.next()) {
+                double currentBalance = rs.getDouble("balance");
+                double newBalance = currentBalance + amount;
+                DatabaseConnection.executeUpdate("UPDATE accounts SET balance = ? WHERE account_number = ?", newBalance, accountNumber);
+                System.out.println("Deposit successful. New balance: " + newBalance);
+            } else {
+                System.out.println("Account not found.");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
     }
 
     public void withdraw() {
-        System.out.print("Enter user ID: ");
-        String userId = scanner.next();
-        User user = users.get(userId);
-
-        if (user == null) {
-            System.out.println("User not found.");
-            return;
-        }
-
         System.out.print("Enter account number: ");
         String accountNumber = scanner.next();
-        Account account = findAccount(user, accountNumber);
-
-        if (account == null) {
-            System.out.println("Account not found.");
-            return;
-        }
 
         System.out.print("Enter withdrawal amount: ");
         double amount = scanner.nextDouble();
 
-        try {
-            account.withdraw(amount);
-        } catch (InsufficientFundsException e) {
-            System.out.println(e.getMessage());
-        }
-    }
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement selectStmt = connection.prepareStatement("SELECT balance FROM accounts WHERE account_number = ?");
+             PreparedStatement updateStmt = connection.prepareStatement("UPDATE accounts SET balance = ? WHERE account_number = ?")) {
 
-    private Account findAccount(User user, String accountNumber) {
-        for (Account account : user.getAccounts()) {
-            if (account.getAccountNumber().equals(accountNumber)) {
-                return account;
+            // Получаем текущий баланс
+            selectStmt.setString(1, accountNumber);
+            ResultSet rs = selectStmt.executeQuery();
+
+            if (rs.next()) {
+                double currentBalance = rs.getDouble("balance");
+
+                if (amount > 0 && amount <= currentBalance) {
+                    double newBalance = currentBalance - amount;
+
+                    // Обновляем баланс в базе данных
+                    updateStmt.setDouble(1, newBalance);
+                    updateStmt.setString(2, accountNumber);
+                    updateStmt.executeUpdate();
+
+                    System.out.println("Withdrawal successful. New balance: " + newBalance);
+                } else {
+                    System.out.println("Insufficient funds or invalid amount.");
+                }
+            } else {
+                System.out.println("Account not found.");
             }
+
+        } catch (SQLException e) {
+            e.printStackTrace();
         }
-        return null;
     }
 }
 
@@ -205,6 +251,13 @@ public class BankApp {
             System.out.println("3. Deposit");
             System.out.println("4. Withdraw");
             System.out.println("5. Exit");
+
+            System.out.print("Enter your choice: ");
+            if (!scanner.hasNextInt()) {
+                System.out.println("Invalid input. Please enter a number.");
+                scanner.next(); // Очищаем ввод
+                continue;
+            }
 
             int choice = scanner.nextInt();
             switch (choice) {
@@ -222,6 +275,7 @@ public class BankApp {
                     break;
                 case 5:
                     System.out.println("Exiting application.");
+                    scanner.close();
                     return;
                 default:
                     System.out.println("Invalid choice. Try again.");
