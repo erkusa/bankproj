@@ -2,6 +2,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.ResultSet;
 
 public class DatabaseConnection {
     private static final String URL = "jdbc:postgresql://localhost:5432/postgres";
@@ -21,6 +22,20 @@ public class DatabaseConnection {
             statement.executeUpdate();
         } catch (SQLException e) {
             e.printStackTrace();
+        }
+    }
+
+    public static ResultSet executeQuery(String query, Object... params) {
+        try {
+            Connection connection = getConnection();
+            PreparedStatement statement = connection.prepareStatement(query);
+            for (int i = 0; i < params.length; i++) {
+                statement.setObject(i + 1, params[i]);
+            }
+            return statement.executeQuery(); // Возвращаем ResultSet
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return null;
         }
     }
 }

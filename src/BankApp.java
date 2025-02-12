@@ -1,6 +1,4 @@
 import java.util.*;
-
-
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -137,6 +135,131 @@ class BankService {
         }
     }
 
+    public void transfer() {
+        System.out.print("Enter your user ID: ");
+        String userId = scanner.next();
+        User user = users.get(userId);
+
+        if (user == null) {
+            System.out.println("User not found.");
+            return;
+        }
+
+        System.out.print("Enter your password: ");
+        String password = scanner.next();
+
+        if (!user.authenticate(password)) {
+            System.out.println("Incorrect password. Transfer canceled.");
+            return;
+        }
+
+        System.out.print("Enter your account number: ");
+        String fromAccount = scanner.next();
+        System.out.print("Enter recipient's account number: ");
+        String toAccount = scanner.next();
+        System.out.print("Enter transfer amount: ");
+        double amount = scanner.nextDouble();
+
+        try (Connection connection = DatabaseConnection.getConnection()) {
+            connection.setAutoCommit(false);
+
+            String selectBalanceQuery = "SELECT balance FROM accounts WHERE account_number = ?";
+            try (PreparedStatement selectStmt = connection.prepareStatement(selectBalanceQuery)) {
+                selectStmt.setString(1, fromAccount);
+                ResultSet rs = selectStmt.executeQuery();
+
+                if (!rs.next()) {
+                    System.out.println("Sender account not found.");
+                    return;
+                }
+
+                double senderBalance = rs.getDouble("balance");
+
+                if (senderBalance < amount) {
+                    System.out.println("Insufficient funds.");
+                    return;
+                }
+            }
+
+            String updateSenderQuery = "UPDATE accounts SET balance = balance - ? WHERE account_number = ?";
+            try (PreparedStatement updateSenderStmt = connection.prepareStatement(updateSenderQuery)) {
+                updateSenderStmt.setDouble(1, amount);
+                updateSenderStmt.setString(2, fromAccount);
+                updateSenderStmt.executeUpdate();
+            }
+
+            String updateReceiverQuery = "UPDATE accounts SET balance = balance + ? WHERE account_number = ?";
+            try (PreparedStatement updateReceiverStmt = connection.prepareStatement(updateReceiverQuery)) {
+                updateReceiverStmt.setDouble(1, amount);
+                updateReceiverStmt.setString(2, toAccount);
+                int rowsAffected = updateReceiverStmt.executeUpdate();
+
+                if (rowsAffected == 0) {
+                    System.out.println("Recipient account not found.");
+                    connection.rollback();
+                    return;
+                }
+            }
+
+            connection.commit();
+            System.out.println("Transfer successful. Transferred " + amount + " from " + fromAccount + " to " + toAccount);
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void withdraw() {
+        System.out.print("Enter user ID: ");
+        String userId = scanner.next();
+        User user = users.get(userId);
+
+        if (user == null) {
+            System.out.println("User not found.");
+            return;
+        }
+
+        System.out.print("Enter password: ");
+        String password = scanner.next();
+
+        if (!user.authenticate(password)) {
+            System.out.println("Incorrect password. Withdrawal canceled.");
+            return;
+        }
+
+        System.out.print("Enter account number: ");
+        String accountNumber = scanner.next();
+        System.out.print("Enter withdrawal amount: ");
+        double amount = scanner.nextDouble();
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement selectStmt = connection.prepareStatement("SELECT balance FROM accounts WHERE account_number = ?");
+             PreparedStatement updateStmt = connection.prepareStatement("UPDATE accounts SET balance = ? WHERE account_number = ?")) {
+
+            selectStmt.setString(1, accountNumber);
+            ResultSet rs = selectStmt.executeQuery();
+
+            if (rs.next()) {
+                double currentBalance = rs.getDouble("balance");
+
+                if (amount > 0 && amount <= currentBalance) {
+                    double newBalance = currentBalance - amount;
+                    updateStmt.setDouble(1, newBalance);
+                    updateStmt.setString(2, accountNumber);
+                    updateStmt.executeUpdate();
+                    System.out.println("Withdrawal successful. New balance: " + newBalance);
+                } else {
+                    System.out.println("Insufficient funds or invalid amount.");
+                }
+            } else {
+                System.out.println("Account not found.");
+            }
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
     public void createUser() {
         System.out.print("Enter user ID: ");
         String userId = scanner.next();
@@ -198,45 +321,6 @@ class BankService {
             e.printStackTrace();
         }
     }
-
-    public void withdraw() {
-        System.out.print("Enter account number: ");
-        String accountNumber = scanner.next();
-
-        System.out.print("Enter withdrawal amount: ");
-        double amount = scanner.nextDouble();
-
-        try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement selectStmt = connection.prepareStatement("SELECT balance FROM accounts WHERE account_number = ?");
-             PreparedStatement updateStmt = connection.prepareStatement("UPDATE accounts SET balance = ? WHERE account_number = ?")) {
-
-            // Получаем текущий баланс
-            selectStmt.setString(1, accountNumber);
-            ResultSet rs = selectStmt.executeQuery();
-
-            if (rs.next()) {
-                double currentBalance = rs.getDouble("balance");
-
-                if (amount > 0 && amount <= currentBalance) {
-                    double newBalance = currentBalance - amount;
-
-                    // Обновляем баланс в базе данных
-                    updateStmt.setDouble(1, newBalance);
-                    updateStmt.setString(2, accountNumber);
-                    updateStmt.executeUpdate();
-
-                    System.out.println("Withdrawal successful. New balance: " + newBalance);
-                } else {
-                    System.out.println("Insufficient funds or invalid amount.");
-                }
-            } else {
-                System.out.println("Account not found.");
-            }
-
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-    }
 }
 
 public class BankApp {
@@ -250,12 +334,13 @@ public class BankApp {
             System.out.println("2. Create account");
             System.out.println("3. Deposit");
             System.out.println("4. Withdraw");
-            System.out.println("5. Exit");
+            System.out.println("5. Transfer money");
+            System.out.println("6. Exit");
 
             System.out.print("Enter your choice: ");
             if (!scanner.hasNextInt()) {
                 System.out.println("Invalid input. Please enter a number.");
-                scanner.next(); // Очищаем ввод
+                scanner.next();
                 continue;
             }
 
@@ -274,6 +359,9 @@ public class BankApp {
                     bankService.withdraw();
                     break;
                 case 5:
+                    bankService.transfer();
+                    break;
+                case 6:
                     System.out.println("Exiting application.");
                     scanner.close();
                     return;
