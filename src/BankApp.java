@@ -5,6 +5,110 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
+
+interface Command {
+    void execute();
+}
+
+class CreateUserCommand implements Command {
+    private BankService bankService;
+
+    public CreateUserCommand(BankService bankService) {
+        this.bankService = bankService;
+    }
+
+    @Override
+    public void execute() {
+        bankService.createUser();
+    }
+}
+
+class CreateAccountCommand implements Command {
+    private BankService bankService;
+
+    public CreateAccountCommand(BankService bankService) {
+        this.bankService = bankService;
+    }
+
+    @Override
+    public void execute() {
+        bankService.createAccount();
+    }
+}
+
+class DepositCommand implements Command {
+    private BankService bankService;
+
+    public DepositCommand(BankService bankService) {
+        this.bankService = bankService;
+    }
+
+    @Override
+    public void execute() {
+        bankService.deposit();
+    }
+}
+
+class WithdrawCommand implements Command {
+    private BankService bankService;
+
+    public WithdrawCommand(BankService bankService) {
+        this.bankService = bankService;
+    }
+
+    @Override
+    public void execute() {
+        bankService.withdraw();
+    }
+}
+
+class TransferCommand implements Command {
+    private BankService bankService;
+
+    public TransferCommand(BankService bankService) {
+        this.bankService = bankService;
+    }
+
+    @Override
+    public void execute() {
+        bankService.transfer();
+    }
+}
+
+class ExitCommand implements Command {
+    @Override
+    public void execute() {
+        System.out.println("Exiting application.");
+        System.exit(0);
+    }
+}
+
+
+
+class CommandInvoker {
+    private Map<Integer, Command> commands = new HashMap<>();
+
+    public void registerCommand(int choice, Command command) {
+        commands.put(choice, command);
+    }
+
+    public void executeCommand(int choice) {
+        Command command = commands.get(choice);
+        if (command != null) {
+            command.execute();
+        } else {
+            System.out.println("Invalid choice. Try again.");
+        }
+    }
+}
+
+
+
+
+
+
 
 class User {
     private String userId;
@@ -328,6 +432,14 @@ public class BankApp {
         BankService bankService = new BankService();
         Scanner scanner = new Scanner(System.in);
 
+        CommandInvoker commandInvoker = new CommandInvoker();
+        commandInvoker.registerCommand(1, new CreateUserCommand(bankService));
+        commandInvoker.registerCommand(2, new CreateAccountCommand(bankService));
+        commandInvoker.registerCommand(3, new DepositCommand(bankService));
+        commandInvoker.registerCommand(4, new WithdrawCommand(bankService));
+        commandInvoker.registerCommand(5, new TransferCommand(bankService));
+        commandInvoker.registerCommand(6, new ExitCommand());
+
         while (true) {
             System.out.println("\nChoose an action:");
             System.out.println("1. Create user");
@@ -345,29 +457,7 @@ public class BankApp {
             }
 
             int choice = scanner.nextInt();
-            switch (choice) {
-                case 1:
-                    bankService.createUser();
-                    break;
-                case 2:
-                    bankService.createAccount();
-                    break;
-                case 3:
-                    bankService.deposit();
-                    break;
-                case 4:
-                    bankService.withdraw();
-                    break;
-                case 5:
-                    bankService.transfer();
-                    break;
-                case 6:
-                    System.out.println("Exiting application.");
-                    scanner.close();
-                    return;
-                default:
-                    System.out.println("Invalid choice. Try again.");
-            }
+            commandInvoker.executeCommand(choice);
         }
     }
 }
